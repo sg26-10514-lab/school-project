@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>세계수 수호자 - World Tree Guardian</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* 커스텀 게임 스타일 및 애니메이션 */
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #1a2e1a;
+        }
+        .game-title {
+            font-family: 'Jua', sans-serif;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+        /* 버튼 입체감 및 애니메이션 */
+        .btn-game {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+        }
+        .btn-game:active:not(:disabled) {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+        }
+        .btn-game:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(80%);
+        }
+        /* 플로팅 텍스트 애니메이션 */
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-40px) scale(1.2); }
+        }
+        .floating-text {
+            position: absolute;
+            pointer-events: none;
+            animation: floatUp 1s ease-out forwards;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+            z-index: 20;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col justify-between bg-slate-900 text-white">
+
+    <!-- 상단 상태바 (HUD) -->
+    <header class="w-full bg-slate-800/90 backdrop-blur-md border-b border-slate-700 p-2 sm:p-3 flex flex-wrap justify-between items-center z-10 shadow-lg">
+        <div class="flex items-center space-x-2 sm:space-x-4">
+            <h1 class="game-title text-xl sm:text-2xl text-emerald-400 tracking-wider flex items-center gap-1">
+                <span>🌳</span> 세계수 수호자
+            </h1>
+            <div class="bg-slate-700/80 px-3 py-1 rounded-full text-xs sm:text-sm font-bold text-amber-300 border border-amber-500/30">
+                Day <span id="day-display">1</span> (<span id="time-display">낮</span>)
+            </div>
+        </div>
+
+        <!-- 자원 표시 영역 -->
+        <div class="flex items-center space-x-3 sm:space-x-6 mt-1 sm:mt-0">
+            <!-- 햇빛 에너지 -->
+            <div class="flex items-center space-x-1 bg-slate-900/60 px-2.5 py-1 rounded-lg border border-yellow-500/30" title="햇빛 에너지 (잎에서 생성)">
+                <span class="text-lg">☀️</span>
+                <span id="sun-display" class="font-bold text-yellow-400 text-sm sm:text-base">50</span>
+                <span id="sun-rate" class="text-xs text-yellow-200/70">(+2/s)</span>
+            </div>
+            <!-- 수분 -->
+            <div class="flex items-center space-x-1 bg-slate-900/60 px-2.5 py-1 rounded-lg border border-sky-500/30" title="수분 (뿌리에서 흡수)">
+                <span class="text-lg">💧</span>
+                <span id="water-display" class="font-bold text-sky-400 text-sm sm:text-base">50</span>
+                <span id="water-rate" class="text-xs text-sky-200/70">(+2/s)</span>
+            </div>
+            <!-- 나무 체력 -->
+            <div class="flex items-center space-x-1 bg-slate-900/60 px-2.5 py-1 rounded-lg border border-rose-500/30" title="세계수 생명력">
+                <span class="text-lg">❤️</span>
+                <span id="hp-display" class="font-bold text-rose-400 text-sm sm:text-base">100</span>
+                <span class="text-xs text-slate-400">/<span id="max-hp-display">100</span></span>
+            </div>
+            <!-- 사운드 토글 -->
+            <button id="sound-toggle" class="p-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm" title="효과음 켜기/끄기">
+                🔊
+            </button>
+        </div>
+    </header>
+
+    <!-- 메인 게임 캔버스 영역 -->
+    <main class="relative flex-1 w-full overflow-hidden" id="canvas-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- 튜토리얼 / 이벤트 알림 배너 -->
+        <div id="event-banner" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-900/85 border border-emerald-500/50 text-emerald-200 px-4 py-2 rounded-full text-xs sm:text-sm font-medium shadow-xl transition-opacity duration-300 pointer-events-none text-center max-w-[90%]">
+            가지를 뻗어 세계수를 키우세요! 떨어지는 물방울이나 햇빛을 클릭하면 보너스를 얻습니다.
+        </div>
+
+        <!-- 모달 창 (시작 / 게임오버 / 승리) -->
+        <div id="game-modal" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-30 p-4">
+            <div class="bg-slate-800 border-2 border-emerald-500/50 rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
+                <div class="text-5xl mb-3">🌳✨</div>
+                <h2 id="modal-title" class="game-title text-3xl text-emerald-400 mb-2">세계수 수호자</h2>
+                <p id="modal-desc" class="text-slate-300 text-sm sm:text-base mb-6 leading-relaxed">
+                    작은 묘목에서 시작해 거대한 세계수로 키워내세요.<br>
+                    낮에는 광합성과 수분 흡수로 성장하고,<br>
+                    밤에 찾아오는 해충을 터치하여 물리치세요!<br>
+                    <span class="text-amber-300 font-bold block mt-2">목표: 10일 동안 세계수를 지켜내고 꽃을 피우세요!</span>
+                </p>
+                <div id="modal-stats" class="hidden bg-slate-900/80 rounded-xl p-3 mb-6 text-sm text-slate-300 space-y-1">
+                    <p>최종 생존 일수: <span id="stat-days" class="text-amber-400 font-bold">0</span>일</p>
+                    <p>자라난 가지 수: <span id="stat-branches" class="text-emerald-400 font-bold">0</span>개</p>
+                    <p>처치한 해충 수: <span id="stat-bugs" class="text-rose-400 font-bold">0</span>마리</p>
+                </div>
+                <button id="start-btn" class="btn-game w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold py-3 px-6 rounded-xl text-lg shadow-lg">
+                    생명의 씨앗 심기
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- 하단 컨트롤 패널 (액션 버튼들) -->
+    <footer class="w-full bg-slate-800/95 border-t border-slate-700 p-2 sm:p-3 z-10">
+        <div class="max-w-4xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+            
+            <!-- 1. 가지 뻗기 -->
+            <button id="btn-branch" class="btn-game bg-emerald-700 hover:bg-emerald-600 border border-emerald-500/50 rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center text-left">
+                <div class="flex items-center justify-between w-full mb-1">
+                    <span class="font-bold text-xs sm:text-sm text-white flex items-center gap-1">🌿 가지 뻗기</span>
+                    <span class="text-[10px] sm:text-xs bg-slate-900/60 px-1.5 py-0.5 rounded text-emerald-300" id="lvl-branch">Lv.1</span>
+                </div>
+                <div class="text-[11px] sm:text-xs text-emerald-200 w-full flex justify-between">
+                    <span>☀️ <span id="cost-branch-sun">20</span></span>
+                    <span>💧 <span id="cost-branch-water">20</span></span>
+                </div>
+            </button>
+
+            <!-- 2. 뿌리 내리기 -->
+            <button id="btn-root" class="btn-game bg-amber-800 hover:bg-amber-700 border border-amber-500/50 rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center">
+                <div class="flex items-center justify-between w-full mb-1">
+                    <span class="font-bold text-xs sm:text-sm text-white flex items-center gap-1">🌱 뿌리 확장</span>
+                    <span class="text-[10px] sm:text-xs bg-slate-900/60 px-1.5 py-0.5 rounded text-amber-300" id="lvl-root">Lv.1</span>
+                </div>
+                <div class="text-[11px] sm:text-xs text-amber-200 w-full flex justify-between">
+                    <span>☀️ <span id="cost-root-sun">15</span></span>
+                    <span>수분 생산↑</span>
+                </div>
+            </button>
+
+            <!-- 3. 잎사귀 무성하게 -->
+            <button id="btn-leaf" class="btn-game bg-teal-700 hover:bg-teal-600 border border-teal-500/50 rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center">
+                <div class="flex items-center justify-between w-full mb-1">
+                    <span class="font-bold text-xs sm:text-sm text-white flex items-center gap-1">🍃 잎사귀 강화</span>
+                    <span class="text-[10px] sm:text-xs bg-slate-900/60 px-1.5 py-0.5 rounded text-teal-300" id="lvl-leaf">Lv.1</span>
+                </div>
+                <div class="text-[11px] sm:text-xs text-teal-200 w-full flex justify-between">
+                    <span>💧 <span id="cost-leaf-water">15</span></span>
+                    <span>햇빛 생산↑</span>
+                </div>
+            </button>
+
+            <!-- 4. 수액 치유 및 방어 -->
+            <button id="btn-heal" class="btn-game bg-rose-700 hover:bg-rose-600 border border-rose-500/50 rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center">
+                <div class="flex items-center justify-between w-full mb-1">
+                    <span class="font-bold text-xs sm:text-sm text-white flex items-center gap-1">💖 수액 치유</span>
+                    <span class="text-[10px] sm:text-xs bg-slate-900/60 px-1.5 py-0.5 rounded text-rose-300">+30 HP</span>
+                </div>
+                <div class="text-[11px] sm:text-xs text-rose-200 w-full flex justify-between">
+                    <span>☀️ <span id="cost-heal-sun">25</span></span>
+                    <span>💧 <span id="cost-heal-water">25</span></span>
+                </div>
+            </button>
+
+        </div>
+    </footer>
+
+    <script>
+        /**
+         * 세계수 수호자 (World Tree Guardian) - Core Engine
+         * 20년차 베테랑 아키텍처 설계:
+         * 1. 상태 관리 (State): 자원, 업그레이드 레벨, 시간(낮/밤), 엔티티 배열 분리
+         * 2. 절차적 나무 생성 (Procedural Tree): 재귀적 프랙탈 구조에 바람의 물리 연산(Sway) 적용
+         * 3. 사운드 합성 (Tone.js): 외부 에셋 없이 신디사이저로 맑고 자연 친화적인 효과음 생성
+         * 4. 반응형 캔버스 (Adaptive Canvas): 디바이스 픽셀 비율(DPR) 및 리사이즈 완벽 대응
+         */
+
+        // --- 1. 오디오 시스템 (Tone.js) ---
+        class SoundManager {
+            constructor() {
+                this.enabled = true;
+                this.initialized = false;
+                this.synth = null;
+                this.polySynth = null;
+            }
+
+            async init() {
+                if (this.initialized) return;
+                await Tone.start();
+                this.synth = new Tone.Synth({
+                    oscillator: { type: 'sine' },
+                    envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 }
+                }).toDestination();
+                
+                this.polySynth = new Tone.PolySynth(Tone.Synth, {
+                    oscillator: { type: 'triangle' },
+                    envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 }
+                }).toDestination();
+                this.polySynth.volume.value = -8;
+                this.initialized = true;
+            }
+
+            playGrow() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.polySynth.triggerAttackRelease(['C4', 'E4', 'G4', 'B4'], '16n', now);
+            }
+
+            playCollect() {
+                if (!this.enabled || !this.initialized) return;
+                this.synth.triggerAttackRelease('A5', '32n');
+            }
+
+            playSquash() {
+                if (!this.enabled || !this.initialized) return;
+                this.synth.triggerAttackRelease('G2', '16n');
+            }
+
+            playHeal() {
+                if (!this.enabled || !this.initialized) return;
+                const now = Tone.now();
+                this.polySynth.triggerAttackRelease(['F4', 'A4', 'C5'], '8n', now);
+            }
+
+            playDamage() {
+                if (!this.enabled || !this.initialized) return;
+                this.synth.triggerAttackRelease('C2', '8n');
+            }
+        }
+
+        const sound = new SoundManager();
+
+        // --- 2. 게임 상태 및 설정 ---
+        const GAME_CONFIG = {
+            DAY_DURATION: 20, // 하루 길이 (초)
+            TARGET_DAYS: 10,  // 승리 목표 일수
+            GRAVITY: 0.05
+        };
+
+        let state = {
+            isRunning: false,
+            day: 1,
+            dayTimer: 0,
+            isNight: false,
+            sun: 50,
+            water: 50,
+            hp: 100,
+            maxHp: 100,
+            levels: {
+                branch: 1,
+                root: 1,
+                leaf: 1
+            },
+            costs: {
+                branchSun: 20,
+                branchWater: 20,
+                rootSun: 15,
+                leafWater: 15,
+                healSun: 25,
+                healWater: 25
+            },
+            stats: {
+                bugsKilled: 0,
+                totalBranches: 1
+            },
+            windAngle: 0,
+            windTime: 0
+        };
+
+        // --- 3. 캔버스 및 엔티티 관리 ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        let width = 0;
+        let height = 0;
+        let groundY = 0;
+
+        // 나무 데이터 구조 (노드 기반 재귀 트리)
+        let treeNodes = [];
+        let rootNodes = [];
+        // 상호작용 엔티티
+        let collectibles = []; // 떨어지는 햇빛, 물방울
+        let pests = [];        // 밤에 나타나는 해충
+        let particles = [];    // 시각 효과 파티클
+
+        function resizeCanvas() {
+            const rect = container.getBoundingClientRect();
+            width = rect.width;
+            height = rect.height;
+            canvas.width = width;
+            canvas.height = height;
+            groundY = height * 0.78; // 화면의 78% 지점이 지표면
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- 4. 절차적 나무 및 뿌리 생성 로직 ---
+        class Branch {
+            constructor(x, y, length, angle, thickness, depth, parent = null) {
+                this.startX = x;
+                this.startY = y;
+                this.length = length;
+                this.baseAngle = angle;
+                this.currentAngle = angle;
+                this.thickness = thickness;
+                this.depth = depth;
+                this.parent = parent;
+                this.growth = 0; // 0 ~ 1 애니메이션용
+                this.hasLeaves = depth >= 2;
+                this.leafColor = `hsl(${110 + Math.random() * 35}, ${60 + Math.random() * 20}%, ${35 + Math.random() * 15}%)`;
+                this.hasFlower = false;
+                this.children = [];
+            }
+
+            getEndPosition() {
+                const actualLen = this.length * this.growth;
+                return {
+                    x: this.startX + Math.sin(this.currentAngle) * actualLen,
+                    y: this.startY - Math.cos(this.currentAngle) * actualLen
+                };
+            }
+
+            update(windOffset) {
+                if (this.growth < 1) {
+                    this.growth = Math.min(1, this.growth + 0.03);
+                }
+                // 부모 가지의 끝점에 위치 동기화
+                if (this.parent) {
+                    const parentEnd = this.parent.getEndPosition();
+                    this.startX = parentEnd.x;
+                    this.startY = parentEnd.y;
+                }
+                // 바람에 흔들리는 물리 효과 (깊이가 깊을수록 많이 흔들림)
+                const sway = Math.sin(windOffset + this.depth * 0.5) * (0.02 * this.depth);
+                this.currentAngle = this.baseAngle + sway;
+            }
+
+            draw(ctx) {
+                const end = this.getEndPosition();
+                
+                // 가지 그리기
+                ctx.beginPath();
+                ctx.moveTo(this.startX, this.startY);
+                ctx.lineTo(end.x, end.y);
+                ctx.strokeStyle = this.depth === 0 ? '#5c3a21' : '#6e472b';
+                ctx.lineWidth = Math.max(2, this.thickness * this.growth);
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                // 잎사귀 그리기 (성장 완료 시)
+                if (this.hasLeaves && this.growth > 0.7) {
+                    const leafSize = (8 + state.levels.leaf * 2.5) * this.growth;
+                    ctx.beginPath();
+                    ctx.arc(end.x, end.y, leafSize, 0, Math.PI * 2);
+                    ctx.fillStyle = this.leafColor;
+                    ctx.fill();
+
+                    // 꽃/열매 표현 (레벨이 높거나 목표 달성 시)
+                    if (this.hasFlower || state.day >= GAME_CONFIG.TARGET_DAYS) {
+                        ctx.beginPath();
+                        ctx.arc(end.x + 4, end.y - 4, 5, 0, Math.PI * 2);
+                        ctx.fillStyle = '#ff7eb3';
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
+        class Root {
+            constructor(x, y, length, angle, thickness, depth) {
+                this.startX = x;
+                this.startY = y;
+                this.length = length;
+                this.angle = angle;
+                this.thickness = thickness;
+                this.depth = depth;
+                this.growth = 0;
+            }
+
+            update() {
+                if (this.growth < 1) {
+                    this.growth = Math.min(1, this.growth + 0.02);
+                }
+            }
+
+            draw(ctx) {
+                const actualLen = this.length * this.growth;
+                const endX = this.startX + Math.sin(this.angle) * actualLen;
+                const endY = this.startY + Math.cos(this.angle) * actualLen;
+
+                ctx.beginPath();
+                ctx.moveTo(this.startX, this.startY);
+                ctx.lineTo(endX, endY);
+                ctx.strokeStyle = '#8c6239';
+                ctx.lineWidth = Math.max(1.5, this.thickness * this.growth);
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+        }
+
+        function initTree() {
+            treeNodes = [];
+            rootNodes = [];
+            // 초기 줄기 생성
+            const trunk = new Branch(width / 2, groundY, height * 0.16, 0, 14, 0, null);
+            treeNodes.push(trunk);
+            // 초기 가지 2개 추가
+            growNewBranches(2);
+            // 초기 뿌리 2개 추가
+            growNewRoots(2);
+        }
+
+        function growNewBranches(count = 2) {
+            // 끝단 가지들(자식이 2개 미만인 노드) 찾기
+            let candidates = treeNodes.filter(b => b.children.length < 2 && b.depth < 6);
+            if (candidates.length === 0) candidates = treeNodes;
+
+            for (let i = 0; i < count; i++) {
+                const parent = candidates[Math.floor(Math.random() * candidates.length)];
+                const endPos = parent.getEndPosition();
+                const angleSpread = 0.35 + Math.random() * 0.25;
+                const direction = parent.children.length === 0 ? (Math.random() < 0.5 ? -1 : 1) : (parent.children[0].baseAngle > parent.baseAngle ? -1 : 1);
+                const newAngle = parent.baseAngle + direction * angleSpread;
+                const newLength = parent.length * (0.78 + Math.random() * 0.12);
+                const newThickness = parent.thickness * 0.72;
+
+                const newBranch = new Branch(endPos.x, endPos.y, newLength, newAngle, newThickness, parent.depth + 1, parent);
+                if (Math.random() < 0.25) newBranch.hasFlower = true;
+                
+                parent.children.push(newBranch);
+                treeNodes.push(newBranch);
+                state.stats.totalBranches++;
+            }
+        }
+
+        function growNewRoots(count = 2) {
+            for (let i = 0; i < count; i++) {
+                const startX = width / 2 + (Math.random() - 0.5) * 20;
+                const startY = groundY + 5;
+                const angle = (Math.random() - 0.5) * 1.4; // 아래쪽으로 퍼짐
+                const length = 30 + state.levels.root * 15 + Math.random() * 20;
+                const thickness = 4 + Math.random() * 3;
+                rootNodes.push(new Root(startX, startY, length, angle, thickness, 1));
+            }
+        }
+
+        // --- 5. 상호작용 오브젝트 (햇빛, 물방울, 해충) ---
+        class Collectible {
+            constructor(type) {
+                this.type = type; // 'sun' or 'water'
+                this.x = Math.random() * (width - 60) + 30;
+                this.y = -20;
+                this.radius = 16;
+                this.speedY = 0.8 + Math.random() * 0.8;
+                this.wobble = Math.random() * Math.PI * 2;
+                this.collected = false;
+            }
+
+            update() {
+                this.y += this.speedY;
+                this.wobble += 0.05;
+                this.x += Math.sin(this.wobble) * 0.5;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // 후광 효과
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
+                ctx.fillStyle = this.type === 'sun' ? 'rgba(250, 204, 21, 0.25)' : 'rgba(56, 189, 248, 0.25)';
+                ctx.fill();
+
+                // 아이콘 텍스트
+                ctx.font = '22px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.type === 'sun' ? '☀️' : '💧', 0, 0);
+                ctx.restore();
+            }
+        }
+
+        class Pest {
+            constructor() {
+                // 화면 좌우 가장자리에서 생성
+                const fromLeft = Math.random() < 0.5;
+                this.x = fromLeft ? -20 : width + 20;
+                this.y = groundY - 20 - Math.random() * (height * 0.45);
+                this.targetX = width / 2;
+                this.targetY = groundY - height * 0.15;
+                this.radius = 18;
+                this.speed = 0.6 + (state.day * 0.12);
+                this.hp = 1 + Math.floor(state.day / 4); // 일수가 지날수록 튼튼해짐
+                this.attackTimer = 0;
+                this.wobble = 0;
+            }
+
+            update() {
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const dist = Math.hypot(dx, dy);
+
+                this.wobble += 0.2;
+
+                if (dist > 35) {
+                    this.x += (dx / dist) * this.speed;
+                    this.y += (dy / dist) * this.speed + Math.sin(this.wobble) * 0.5;
+                } else {
+                    // 나무에 도달하면 공격
+                    this.attackTimer++;
+                    if (this.attackTimer >= 60) { // 1초마다 데미지
+                        this.attackTimer = 0;
+                        damageTree(3 + Math.floor(state.day * 0.5));
+                        createParticles(this.x, this.y, '#ef4444', 5);
+                    }
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // 해충 경고 원
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.3)';
+                ctx.fill();
+
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('🐛', 0, 0);
+
+                // 체력이 2 이상이면 표시
+                if (this.hp > 1) {
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.fillText(`HP:${this.hp}`, 0, -18);
+                }
+                ctx.restore();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 1 + Math.random() * 3;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.life = 1.0;
+                this.decay = 0.03 + Math.random() * 0.02;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= this.decay;
+            }
+            draw(ctx) {
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function createParticles(x, y, color, count = 8) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        function showFloatingText(x, y, text, color = '#fff') {
+            const el = document.createElement('div');
+            el.className = 'floating-text text-sm sm:text-base';
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            el.style.color = color;
+            el.innerText = text;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 1000);
+        }
+
+        function showBanner(msg) {
+            const banner = document.getElementById('event-banner');
+            banner.innerText = msg;
+            banner.style.opacity = '1';
+        }
+
+        // --- 6. 게임 로직 및 입력 처리 ---
+        function damageTree(amount) {
+            state.hp = Math.max(0, state.hp - amount);
+            sound.playDamage();
+            updateUI();
+            if (state.hp <= 0) {
+                endGame(false);
+            }
+        }
+
+        // 캔버스 클릭/터치 이벤트 (자원 수집 및 해충 퇴치)
+        function handleCanvasInteraction(clientX, clientY) {
+            if (!state.isRunning) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+
+            // 1. 해충 터치 검사 (우선순위 높음)
+            for (let i = pests.length - 1; i >= 0; i--) {
+                const p = pests[i];
+                const dist = Math.hypot(p.x - x, p.y - y);
+                if (dist <= p.radius + 15) { // 넉넉한 터치 판정
+                    p.hp--;
+                    sound.playSquash();
+                    createParticles(p.x, p.y, '#ef4444', 8);
+                    if (p.hp <= 0) {
+                        pests.splice(i, 1);
+                        state.stats.bugsKilled++;
+                        state.sun += 5;
+                        showFloatingText(p.x, p.y, '해충 퇴치! +5☀️', '#fca5a5');
+                    } else {
+                        showFloatingText(p.x, p.y, '타격!', '#fde047');
+                    }
+                    updateUI();
+                    return;
+                }
+            }
+
+            // 2. 떨어지는 자원 수집 검사
+            for (let i = collectibles.length - 1; i >= 0; i--) {
+                const c = collectibles[i];
+                const dist = Math.hypot(c.x - x, c.y - y);
+                if (dist <= c.radius + 18) {
+                    collectibles.splice(i, 1);
+                    sound.playCollect();
+                    if (c.type === 'sun') {
+                        const bonus = 10 + state.levels.leaf * 2;
+                        state.sun += bonus;
+                        createParticles(c.x, c.y, '#facc15', 10);
+                        showFloatingText(c.x, c.y, `+${bonus}☀️`, '#fef08a');
+                    } else {
+                        const bonus = 10 + state.levels.root * 2;
+                        state.water += bonus;
+                        createParticles(c.x, c.y, '#38bdf8', 10);
+                        showFloatingText(c.x, c.y, `+${bonus}💧`, '#bae6fd');
+                    }
+                    updateUI();
+                    return;
+                }
+            }
+        }
+
+        canvas.addEventListener('pointerdown', (e) => {
+            handleCanvasInteraction(e.clientX, e.clientY);
+        });
+
+        // --- 7. 업그레이드 버튼 핸들러 ---
+        document.getElementById('btn-branch').addEventListener('click', () => {
+            if (state.sun >= state.costs.branchSun && state.water >= state.costs.branchWater) {
+                state.sun -= state.costs.branchSun;
+                state.water -= state.costs.branchWater;
+                state.levels.branch++;
+                state.maxHp += 20;
+                state.hp = Math.min(state.maxHp, state.hp + 20);
+                
+                // 비용 증가
+                state.costs.branchSun = Math.floor(state.costs.branchSun * 1.35);
+                state.costs.branchWater = Math.floor(state.costs.branchWater * 1.35);
+
+                growNewBranches(2);
+                sound.playGrow();
+                createParticles(width / 2, groundY - 80, '#34d399', 15);
+                showFloatingText(width / 2, groundY - 100, '새로운 가지 성장! 최대체력 +20', '#6ee7b7');
+                updateUI();
+            }
+        });
+
+        document.getElementById('btn-root').addEventListener('click', () => {
+            if (state.sun >= state.costs.rootSun) {
+                state.sun -= state.costs.rootSun;
+                state.levels.root++;
+                state.costs.rootSun = Math.floor(state.costs.rootSun * 1.4);
+
+                growNewRoots(2);
+                sound.playGrow();
+                createParticles(width / 2, groundY + 30, '#d97706', 12);
+                showFloatingText(width / 2, groundY + 20, '뿌리 확장! 수분 흡수량 증가', '#fcd34d');
+                updateUI();
+            }
+        });
+
+        document.getElementById('btn-leaf').addEventListener('click', () => {
+            if (state.water >= state.costs.leafWater) {
+                state.water -= state.costs.leafWater;
+                state.levels.leaf++;
+                state.costs.leafWater = Math.floor(state.costs.leafWater * 1.4);
+
+                sound.playGrow();
+                createParticles(width / 2, groundY - 120, '#2dd4bf', 12);
+                showFloatingText(width / 2, groundY - 120, '잎사귀 강화! 광합성 효율 증가', '#5eead4');
+                updateUI();
+            }
+        });
+
+        document.getElementById('btn-heal').addEventListener('click', () => {
+            if (state.sun >= state.costs.healSun && state.water >= state.costs.healWater && state.hp < state.maxHp) {
+                state.sun -= state.costs.healSun;
+                state.water -= state.costs.healWater;
+                state.hp = Math.min(state.maxHp, state.hp + 30);
+
+                sound.playHeal();
+                createParticles(width / 2, groundY - 50, '#fb7185', 15);
+                showFloatingText(width / 2, groundY - 60, '수액 치유! +30 HP', '#fda4af');
+                updateUI();
+            }
+        });
+
+        document.getElementById('sound-toggle').addEventListener('click', (e) => {
+            sound.enabled = !sound.enabled;
+            e.target.innerText = sound.enabled ? '🔊' : '🔇';
+        });
+
+        // --- 8. UI 업데이트 및 루프 관리 ---
+        function getSunRate() {
+            // 밤에는 광합성 감소
+            const base = state.levels.leaf * 2 + Math.floor(state.levels.branch * 0.5);
+            return state.isNight ? Math.max(1, Math.floor(base * 0.3)) : base;
+        }
+
+        function getWaterRate() {
+            return state.levels.root * 2 + Math.floor(state.levels.branch * 0.5);
+        }
+
+        function updateUI() {
+            document.getElementById('day-display').innerText = state.day;
+            const timeEl = document.getElementById('time-display');
+            timeEl.innerText = state.isNight ? '밤 🌙' : '낮 ☀️';
+            timeEl.className = state.isNight ? 'text-indigo-300' : 'text-amber-300';
+
+            document.getElementById('sun-display').innerText = Math.floor(state.sun);
+            document.getElementById('sun-rate').innerText = `(+${getSunRate()}/s)`;
+            
+            document.getElementById('water-display').innerText = Math.floor(state.water);
+            document.getElementById('water-rate').innerText = `(+${getWaterRate()}/s)`;
+
+            document.getElementById('hp-display').innerText = Math.floor(state.hp);
+            document.getElementById('max-hp-display').innerText = state.maxHp;
+
+            // 레벨 및 비용 텍스트
+            document.getElementById('lvl-branch').innerText = `Lv.${state.levels.branch}`;
+            document.getElementById('cost-branch-sun').innerText = state.costs.branchSun;
+            document.getElementById('cost-branch-water').innerText = state.costs.branchWater;
+
+            document.getElementById('lvl-root').innerText = `Lv.${state.levels.root}`;
+            document.getElementById('cost-root-sun').innerText = state.costs.rootSun;
+
+            document.getElementById('lvl-leaf').innerText = `Lv.${state.levels.leaf}`;
+            document.getElementById('cost-leaf-water').innerText = state.costs.leafWater;
+
+            // 버튼 활성화 여부
+            document.getElementById('btn-branch').disabled = !(state.sun >= state.costs.branchSun && state.water >= state.costs.branchWater);
+            document.getElementById('btn-root').disabled = !(state.sun >= state.costs.rootSun);
+            document.getElementById('btn-leaf').disabled = !(state.water >= state.costs.leafWater);
+            document.getElementById('btn-heal').disabled = !(state.sun >= state.costs.healSun && state.water >= state.costs.healWater && state.hp < state.maxHp);
+        }
+
+        // --- 9. 메인 렌더링 & 게임 루프 ---
+        let lastTime = 0;
+        let resourceTick = 0;
+        let spawnTick = 0;
+
+        function drawBackground() {
+            // 낮과 밤에 따른 하늘 그라데이션 변화
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, groundY);
+            if (state.isNight) {
+                skyGrad.addColorStop(0, '#0f172a');
+                skyGrad.addColorStop(1, '#1e1b4b');
+            } else {
+                skyGrad.addColorStop(0, '#0284c7');
+                skyGrad.addColorStop(1, '#bae6fd');
+            }
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, width, groundY);
+
+            // 해 또는 달 그리기
+            const celestialX = width * 0.82;
+            const celestialY = height * 0.15;
+            ctx.beginPath();
+            ctx.arc(celestialX, celestialY, 28, 0, Math.PI * 2);
+            if (state.isNight) {
+                ctx.fillStyle = '#fef08a';
+                ctx.shadowColor = '#fef08a';
+                ctx.shadowBlur = 20;
+            } else {
+                ctx.fillStyle = '#fde047';
+                ctx.shadowColor = '#f59e0b';
+                ctx.shadowBlur = 30;
+            }
+            ctx.fill();
+            ctx.shadowBlur = 0; // 초기화
+
+            // 땅 (지하 토양) 그리기
+            const groundGrad = ctx.createLinearGradient(0, groundY, 0, height);
+            groundGrad.addColorStop(0, '#3f2e21');
+            groundGrad.addColorStop(1, '#1c130d');
+            ctx.fillStyle = groundGrad;
+            ctx.fillRect(0, groundY, width, height - groundY);
+
+            // 잔디 표면 라인
+            ctx.fillStyle = state.isNight ? '#14532d' : '#16a34a';
+            ctx.fillRect(0, groundY - 4, width, 8);
+        }
+
+        function gameLoop(timestamp) {
+            if (!state.isRunning) return;
+
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // 바람 애니메이션 업데이트
+            state.windTime += 0.03;
+
+            // 시간 및 낮/밤 주기 관리
+            state.dayTimer += dt;
+            if (state.dayTimer >= GAME_CONFIG.DAY_DURATION) {
+                state.dayTimer = 0;
+                state.day++;
+                if (state.day > GAME_CONFIG.TARGET_DAYS) {
+                    endGame(true);
+                    return;
+                }
+                showBanner(`Day ${state.day} 시작! 세계수가 더욱 거대해집니다.`);
+            }
+
+            // 하루의 절반 이후는 밤
+            const wasNight = state.isNight;
+            state.isNight = state.dayTimer > (GAME_CONFIG.DAY_DURATION * 0.55);
+            if (!wasNight && state.isNight) {
+                showBanner('⚠️ 밤이 찾아왔습니다! 해충들이 세계수를 노립니다. 터치해서 물리치세요!');
+            } else if (wasNight && !state.isNight) {
+                showBanner('☀️ 아침이 밝았습니다! 광합성 속도가 회복됩니다.');
+            }
+
+            // 1초마다 자동 자원 생산
+            resourceTick += dt;
+            if (resourceTick >= 1.0) {
+                resourceTick -= 1.0;
+                state.sun += getSunRate();
+                state.water += getWaterRate();
+                updateUI();
+            }
+
+            // 오브젝트 스폰 관리
+            spawnTick += dt;
+            if (spawnTick >= 2.2) {
+                spawnTick = 0;
+                // 낮에는 햇빛과 물방울 자주 드롭
+                if (!state.isNight) {
+                    collectibles.push(new Collectible(Math.random() < 0.5 ? 'sun' : 'water'));
+                } else {
+                    // 밤에는 해충 스폰 (일수가 높을수록 많이 등장)
+                    const pestCount = 1 + Math.floor(state.day / 3);
+                    for (let i = 0; i < pestCount; i++) {
+                        pests.push(new Pest());
+                    }
+                    // 가끔 물방울도 드롭
+                    if (Math.random() < 0.4) collectibles.push(new Collectible('water'));
+                }
+            }
+
+            // --- 그리기 시작 ---
+            ctx.clearRect(0, 0, width, height);
+            drawBackground();
+
+            // 뿌리 업데이트 및 그리기
+            rootNodes.forEach(root => {
+                root.update();
+                root.draw(ctx);
+            });
+
+            // 나무 가지 업데이트 및 그리기
+            treeNodes.forEach(branch => {
+                branch.update(state.windTime);
+                branch.draw(ctx);
+            });
+
+            // 수집품 업데이트 및 그리기
+            for (let i = collectibles.length - 1; i >= 0; i--) {
+                const c = collectibles[i];
+                c.update();
+                c.draw(ctx);
+                if (c.y > groundY) {
+                    collectibles.splice(i, 1); // 땅에 닿으면 소멸
+                }
+            }
+
+            // 해충 업데이트 및 그리기
+            for (let i = pests.length - 1; i >= 0; i--) {
+                const p = pests[i];
+                p.update();
+                p.draw(ctx);
+            }
+
+            // 파티클 업데이트 및 그리기
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const pt = particles[i];
+                pt.update();
+                pt.draw(ctx);
+                if (pt.life <= 0) particles.splice(i, 1);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 10. 게임 시작 및 종료 제어 ---
+        async function startGame() {
+            await sound.init();
+            
+            // 상태 초기화
+            state = {
+                isRunning: true,
+                day: 1,
+                dayTimer: 0,
+                isNight: false,
+                sun: 50,
+                water: 50,
+                hp: 100,
+                maxHp: 100,
+                levels: { branch: 1, root: 1, leaf: 1 },
+                costs: { branchSun: 20, branchWater: 20, rootSun: 15, leafWater: 15, healSun: 25, healWater: 25 },
+                stats: { bugsKilled: 0, totalBranches: 1 },
+                windAngle: 0,
+                windTime: 0
+            };
+
+            collectibles = [];
+            pests = [];
+            particles = [];
+            
+            resizeCanvas();
+            initTree();
+            updateUI();
+
+            document.getElementById('game-modal').classList.add('hidden');
+            showBanner('Day 1: 햇빛과 수분을 모아 가지를 뻗어보세요!');
+            
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame(isVictory) {
+            state.isRunning = false;
+            const modal = document.getElementById('game-modal');
+            const title = document.getElementById('modal-title');
+            const desc = document.getElementById('modal-desc');
+            const statsBox = document.getElementById('modal-stats');
+            const btn = document.getElementById('start-btn');
+
+            modal.classList.remove('hidden');
+            statsBox.classList.remove('hidden');
+
+            document.getElementById('stat-days').innerText = Math.min(state.day, GAME_CONFIG.TARGET_DAYS);
+            document.getElementById('stat-branches').innerText = state.stats.totalBranches;
+            document.getElementById('stat-bugs').innerText = state.stats.bugsKilled;
+
+            if (isVictory) {
+                title.innerText = '🌸 세계수 개화 성공! 🌸';
+                title.className = 'game-title text-3xl text-amber-300 mb-2';
+                desc.innerText = '축하합니다! 수많은 시련과 해충을 이겨내고 세계수가 찬란한 생명의 꽃을 피웠습니다.';
+                btn.innerText = '새로운 세계수 키우기';
+                sound.playGrow();
+            } else {
+                title.innerText = '🍂 세계수가 시들었습니다...';
+                title.className = 'game-title text-3xl text-rose-400 mb-2';
+                desc.innerText = '해충의 습격을 버텨내지 못했습니다. 뿌리와 잎을 균형 있게 성장시켜 다시 도전해보세요!';
+                btn.innerText = '다시 도전하기';
+            }
+        }
+
+        document.getElementById('start-btn').addEventListener('click', startGame);
+
+        // 초기 배경 렌더링 (모달 뒤 배경용)
+        initTree();
+        drawBackground();
+        treeNodes.forEach(b => b.draw(ctx));
+        rootNodes.forEach(r => r.draw(ctx));
+
+    </script>
+</body>
+</html>
